@@ -18,11 +18,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Verify Java environment
         shell: bash
@@ -95,15 +95,19 @@ jobs:
 
           set +o pipefail
           yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null
-          set -o pipefail
-
-          "$SDKMANAGER" --sdk_root="$SDK_DIR" --install \
+          yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --install \
             "platform-tools" \
             "platforms;android-36.1" \
             "build-tools;36.0.0"
+          set -o pipefail
 
           if [ ! -f "$SDK_DIR/platforms/android-36.1/android.jar" ]; then
             echo "::error::Expected Android SDK Platform 36.1 missing at $SDK_DIR/platforms/android-36.1/android.jar."
+            exit 1
+          fi
+
+          if [ ! -d "$SDK_DIR/build-tools/36.0.0" ]; then
+            echo "::error::Expected Android Build-Tools 36.0.0 missing at $SDK_DIR/build-tools/36.0.0."
             exit 1
           fi
 
@@ -145,7 +149,23 @@ jobs:
           fi
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace --no-daemon
+        shell: bash
+        run: |
+          BUILD_LOG="${RUNNER_TEMP:-/tmp}/gradle-build.log"
+          set +e
+          gradle :app:assembleDebug --stacktrace --no-daemon 2>&1 | tee "$BUILD_LOG"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            {
+              echo "## Gradle Build Failure Log (tail)"
+              echo ""
+              echo '```text'
+              tail -n 120 "$BUILD_LOG" || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$STATUS"
+          fi
 
       - name: Verify debug APK
         shell: bash
