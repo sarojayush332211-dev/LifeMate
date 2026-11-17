@@ -65,11 +65,15 @@ sealed interface AuthSignInOutcome {
 class FirebaseAuthManager(
     private val context: Context,
     private val auth: FirebaseAuth = Firebase.auth,
-    private val db: FirebaseFirestore = FirebaseFirestore.getInstance(
-        context.applicationContext.getString(R.string.firestore_database_id)
-    ),
+    private val db: FirebaseFirestore? = null,
     private val credentialManager: CredentialManager = CredentialManager.create(context)
 ) {
+
+    private val firestore: FirebaseFirestore by lazy {
+        db ?: FirebaseFirestore.getInstance(
+            context.applicationContext.getString(R.string.firestore_database_id)
+        )
+    }
 
     private val _sessionState = MutableStateFlow<AuthSessionState>(
         auth.currentUser?.toWorkspaceUser(isNewRegistration = false)
@@ -106,7 +110,7 @@ class FirebaseAuthManager(
     /**
      * Attempts silent sign-in for returning users without displaying an interactive prompt.
      */
-    suspend fun attemptSilentSignIn(): AuthSignInOutcome {
+    suspend fun attemptSilentSignIn(activity: Activity? = null): AuthSignInOutcome {
         val existing = auth.currentUser
         if (existing != null) {
             ensurePersonalWorkspace(existing)
@@ -115,6 +119,7 @@ class FirebaseAuthManager(
             return AuthSignInOutcome.Success(workspaceUser)
         }
 
+        val hostActivity = activity ?: return AuthSignInOutcome.Cancelled
         val clientId = resolveWebClientId() ?: return AuthSignInOutcome.Failure(
             "Google Sign-In configuration missing."
         )
@@ -130,11 +135,11 @@ class FirebaseAuthManager(
             .build()
 
         return try {
-            val result = credentialManager.getCredential(context, request)
+            val result = credentialManager.getCredential(hostActivity, request)
             completeGoogleCredentialExchange(result.credential)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             _sessionState.value = AuthSessionState.Unauthenticated
             AuthSignInOutcome.Cancelled
         }
@@ -180,9 +185,9 @@ class FirebaseAuthManager(
      * Does not overwrite existing profile/onboarding state for returning users.
      */
     suspend fun ensurePersonalWorkspace(user: FirebaseUser): Result<Boolean> = runCatching {
-        val userRef = db.collection("users").document(user.uid)
+        val userRef = firestore.collection("users").document(user.uid)
         try {
-            val created = db.runTransaction { tx ->
+            val created = firestore.runTransaction { tx ->
                 val snapshot = tx.get(userRef)
                 if (snapshot.exists()) {
                     false

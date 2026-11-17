@@ -4,13 +4,16 @@ import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 
 private val Context.lifeMateDataStore by preferencesDataStore(name = "lifemate_preferences")
 
@@ -20,15 +23,23 @@ class LocalPreferencesStore(private val context: Context) {
     private fun localAvatarKey(uid: String) = stringPreferencesKey("local_avatar_$uid")
     private val lastThemeKey = booleanPreferencesKey("last_dark_mode")
 
-    val lastDarkModeFlow: Flow<Boolean> = context.lifeMateDataStore.data.map { prefs ->
+    private val safePreferencesData = context.lifeMateDataStore.data.catch { exception ->
+        if (exception is IOException) {
+            emit(emptyPreferences())
+        } else {
+            throw exception
+        }
+    }
+
+    val lastDarkModeFlow: Flow<Boolean> = safePreferencesData.map { prefs ->
         prefs[lastThemeKey] ?: false
     }
 
-    fun darkModeFlow(uid: String): Flow<Boolean?> = context.lifeMateDataStore.data.map { prefs ->
+    fun darkModeFlow(uid: String): Flow<Boolean?> = safePreferencesData.map { prefs ->
         prefs[darkModeKey(uid)]
     }
 
-    fun localAvatarFlow(uid: String): Flow<String?> = context.lifeMateDataStore.data.map { prefs ->
+    fun localAvatarFlow(uid: String): Flow<String?> = safePreferencesData.map { prefs ->
         prefs[localAvatarKey(uid)]?.takeIf { path -> File(path).exists() }
     }
 
@@ -42,22 +53,24 @@ class LocalPreferencesStore(private val context: Context) {
     }
 
     suspend fun savePickedAvatar(uid: String, sourceUri: Uri): String? = withContext(Dispatchers.IO) {
-        val targetFile = File(context.filesDir, "avatar_$uid.jpg")
-        val copied = context.contentResolver.openInputStream(sourceUri)?.use { input ->
-            targetFile.outputStream().use { output ->
-                input.copyTo(output)
+        runCatching {
+            val targetFile = File(context.filesDir, "avatar_$uid.jpg")
+            val copied = context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                targetFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+                true
+            } ?: false
+            if (copied) {
+                val absolutePath = targetFile.absolutePath
+                context.lifeMateDataStore.edit { prefs ->
+                    prefs[localAvatarKey(uid)] = absolutePath
+                }
+                absolutePath
+            } else {
+                null
             }
-            true
-        } ?: false
-        if (copied) {
-            val absolutePath = targetFile.absolutePath
-            context.lifeMateDataStore.edit { prefs ->
-                prefs[localAvatarKey(uid)] = absolutePath
-            }
-            absolutePath
-        } else {
-            null
-        }
+        }.getOrNull()
     }
 
     suspend fun resetLocalData(uid: String) {
