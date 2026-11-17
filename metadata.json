@@ -1,0 +1,6 @@
+{
+  "name": "LifeMate",
+  "description": "Personal life companion for daily tasks, expenses, goals, consistency streaks, and personalized motivation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
