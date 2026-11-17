@@ -18,8 +18,6 @@ import com.example.domain.ConsistencyCalculator
 import com.example.domain.LifeMateDateUtils
 import com.example.domain.MotivationProvider
 import com.example.domain.PersonalizedMotivationEngine
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,9 +72,9 @@ class LifeMateViewModel(
     private val repository: LifeMateRepository,
     private val prefsStore: LocalPreferencesStore,
     private val currentUserId: String,
-    private val googleDisplayName: String,
-    private val googleEmail: String,
-    private val googlePhotoUrl: String,
+    private val initialDisplayName: String = "",
+    private val initialEmail: String = "",
+    private val initialPhotoUrl: String = "",
     private val motivationProvider: MotivationProvider = PersonalizedMotivationEngine()
 ) : ViewModel() {
 
@@ -87,32 +85,28 @@ class LifeMateViewModel(
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
-    private fun <T> Flow<T>.unwrapFirestoreCatch(tag: String): Flow<Result<T>> = this
+    private fun <T> Flow<T>.wrapStreamCatch(tag: String): Flow<Result<T>> = this
         .map<T, Result<T>> { Result.success(it) }
         .catch { error ->
-            val firestoreError = generateSequence(error) { it.cause }
-                .filterIsInstance<FirebaseFirestoreException>()
-                .firstOrNull()
-            if (firestoreError == null && error is CancellationException) throw error
-            val rootError = firestoreError ?: error
-            Log.w(TAG, "Stream error ($tag)", rootError)
-            emit(Result.failure(rootError))
+            if (error is CancellationException) throw error
+            Log.w(TAG, "Stream error ($tag)", error)
+            emit(Result.failure(error))
         }
 
     private val profileStream: Flow<Result<UserProfile?>> =
-        repository.observeUserProfile(currentUserId).unwrapFirestoreCatch("profile")
+        repository.observeUserProfile(currentUserId).wrapStreamCatch("profile")
 
     private val tasksStream: Flow<Result<List<DailyTask>>> =
-        repository.observeTasks(currentUserId).unwrapFirestoreCatch("tasks")
+        repository.observeTasks(currentUserId).wrapStreamCatch("tasks")
 
     private val expensesStream: Flow<Result<List<ExpenseEntry>>> =
-        repository.observeExpenses(currentUserId).unwrapFirestoreCatch("expenses")
+        repository.observeExpenses(currentUserId).wrapStreamCatch("expenses")
 
     private val goalsStream: Flow<Result<List<PersonalGoal>>> =
-        repository.observeGoals(currentUserId).unwrapFirestoreCatch("goals")
+        repository.observeGoals(currentUserId).wrapStreamCatch("goals")
 
     private val activityStream: Flow<Result<List<ActivityDay>>> =
-        repository.observeActivityDays(currentUserId).unwrapFirestoreCatch("activity")
+        repository.observeActivityDays(currentUserId).wrapStreamCatch("activity")
 
     private val coreStreams: Flow<CoreSnapshot> = combine(
         profileStream,
@@ -140,11 +134,11 @@ class LifeMateViewModel(
 
         val profile = snapshot.profileRes.getOrNull()
         val tasks = (snapshot.tasksRes.getOrNull() ?: emptyList())
-            .sortedWith(compareBy<DailyTask> { it.completed }.thenByDescending { it.createdAt ?: Timestamp(0, 0) })
+            .sortedWith(compareBy<DailyTask> { it.completed }.thenByDescending { it.createdAtMillis })
         val expenses = (snapshot.expensesRes.getOrNull() ?: emptyList())
-            .sortedWith(compareByDescending<ExpenseEntry> { it.expenseDate }.thenByDescending { it.createdAt ?: Timestamp(0, 0) })
+            .sortedWith(compareByDescending<ExpenseEntry> { it.expenseDate }.thenByDescending { it.createdAtMillis })
         val goals = (snapshot.goalsRes.getOrNull() ?: emptyList())
-            .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
+            .sortedByDescending { it.createdAtMillis }
         val activityDays = snapshot.activityRes.getOrNull() ?: emptyList()
 
         val todayKey = LifeMateDateUtils.todayKey()
@@ -184,13 +178,13 @@ class LifeMateViewModel(
         )
 
         val resolvedName = profile?.fullName?.takeIf { it.isNotBlank() }
-            ?: googleDisplayName.takeIf { it.isNotBlank() }
+            ?: initialDisplayName.takeIf { it.isNotBlank() }
             ?: "Friend"
 
-        val resolvedEmail = profile?.email?.takeIf { it.isNotBlank() } ?: googleEmail
+        val resolvedEmail = profile?.email?.takeIf { it.isNotBlank() } ?: initialEmail
         val resolvedAvatar: Any? = localAvatarPath
             ?: profile?.photoUrl?.takeIf { it.isNotBlank() }
-            ?: googlePhotoUrl.takeIf { it.isNotBlank() }
+            ?: initialPhotoUrl.takeIf { it.isNotBlank() }
 
         val primaryGoal = goals.firstOrNull { it.currentAmount < it.targetAmount } ?: goals.firstOrNull()
 
@@ -229,9 +223,9 @@ class LifeMateViewModel(
         started = SharingStarted.WhileSubscribed(5000L),
         initialValue = LifeMateUiState(
             isLoading = true,
-            displayName = googleDisplayName,
-            email = googleEmail,
-            avatarModel = googlePhotoUrl.takeIf { it.isNotBlank() }
+            displayName = initialDisplayName,
+            email = initialEmail,
+            avatarModel = initialPhotoUrl.takeIf { it.isNotBlank() }
         )
     )
 
@@ -259,9 +253,9 @@ class LifeMateViewModel(
             val result = repository.saveUserProfile(
                 userId = currentUserId,
                 fullName = fullName,
-                email = current?.email?.ifBlank { googleEmail } ?: googleEmail,
+                email = current?.email?.ifBlank { initialEmail } ?: initialEmail,
                 dateOfBirth = dateOfBirth,
-                photoUrl = current?.photoUrl?.ifBlank { googlePhotoUrl } ?: googlePhotoUrl,
+                photoUrl = current?.photoUrl?.ifBlank { initialPhotoUrl } ?: initialPhotoUrl,
                 dailyFocus = dailyFocus,
                 motivationStyle = motivationStyle,
                 onboardingCompleted = true,
@@ -293,9 +287,9 @@ class LifeMateViewModel(
             val result = repository.saveUserProfile(
                 userId = currentUserId,
                 fullName = fullName,
-                email = current?.email?.ifBlank { googleEmail } ?: googleEmail,
+                email = current?.email?.ifBlank { initialEmail } ?: initialEmail,
                 dateOfBirth = dateOfBirth,
-                photoUrl = current?.photoUrl?.ifBlank { googlePhotoUrl } ?: googlePhotoUrl,
+                photoUrl = current?.photoUrl?.ifBlank { initialPhotoUrl } ?: initialPhotoUrl,
                 dailyFocus = dailyFocus,
                 motivationStyle = motivationStyle,
                 onboardingCompleted = true,

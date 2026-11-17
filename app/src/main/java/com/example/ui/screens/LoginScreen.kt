@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -25,14 +24,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,38 +43,29 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
-import com.example.auth.AuthSignInOutcome
-import com.example.auth.FirebaseAuthManager
-import kotlinx.coroutines.launch
+import com.example.data.model.UserProfile
+import com.example.ui.components.UserAvatar
 
 @Composable
 fun LoginScreen(
-    authManager: FirebaseAuthManager? = null,
-    onAuthSuccess: () -> Unit
+    existingProfiles: List<UserProfile> = emptyList(),
+    onSelectWorkspace: (String) -> Unit = {},
+    onCreateWorkspace: (initialName: String, email: String) -> Unit = { _, _ -> }
 ) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val resolvedAuthManager = remember(context, authManager) {
-        authManager ?: FirebaseAuthManager(context = context.applicationContext)
-    }
-
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
     var visible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -179,66 +173,104 @@ fun LoginScreen(
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                if (errorMessage != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 14.dp)
+                if (existingProfiles.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = errorMessage!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(14.dp)
+                            text = "Choose Workspace",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp)
                         )
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        val activity = context as? Activity
-                        if (activity == null) {
-                            errorMessage = "Unable to launch Google Sign-In from current context."
-                            return@Button
-                        }
-                        errorMessage = null
-                        isLoading = true
-                        coroutineScope.launch {
-                            when (val outcome = resolvedAuthManager.signInOrRegisterWithGoogle(activity)) {
-                                is AuthSignInOutcome.Success -> {
-                                    isLoading = false
-                                    onAuthSuccess()
-                                }
-                                is AuthSignInOutcome.Cancelled -> {
-                                    isLoading = false
-                                }
-                                is AuthSignInOutcome.Failure -> {
-                                    isLoading = false
-                                    errorMessage = outcome.message
+                        existingProfiles.forEach { profile ->
+                            val workspaceLabel = profile.fullName.ifBlank { "Personal Workspace" }
+                            val workspaceSubtitle = profile.dailyFocus.ifBlank { "Tap to continue where you left off" }
+                            Card(
+                                onClick = { onSelectWorkspace(profile.userId) },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("workspace_card_${profile.userId}")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    UserAvatar(
+                                        model = profile.photoUrl.takeIf { it.isNotBlank() },
+                                        displayName = workspaceLabel,
+                                        size = 44.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = workspaceLabel,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = workspaceSubtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
+                                        contentDescription = "Open $workspaceLabel",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }
-                    },
-                    enabled = !isLoading,
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .testTag("continue_with_google_button")
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.5.dp
-                        )
-                    } else {
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        OutlinedButton(
+                            onClick = { onCreateWorkspace("", "") },
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                                .testTag("create_workspace_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Create New Workspace",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = { onCreateWorkspace("", "") },
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .testTag("get_started_button")
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.AccountCircle,
                             contentDescription = null,
@@ -246,7 +278,7 @@ fun LoginScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = stringResource(R.string.continue_with_google),
+                            text = stringResource(R.string.get_started),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -267,7 +299,7 @@ fun LoginScreen(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Private per-account sync • No separate password needed",
+                        text = "Private on-device workspaces • Works offline anytime",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center

@@ -13,6 +13,7 @@ import com.example.data.model.UserProfile
 import com.example.ui.screens.ExpensesScreen
 import com.example.ui.screens.GoalsScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.PlanScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.ProfileSetupScreen
@@ -31,17 +32,19 @@ class PrimaryScreensComposeTest {
     @get:Rule
     val composeRule = createComposeRule()
 
+    private fun sampleProfile() = UserProfile(
+        id = "user1",
+        userId = "user1",
+        fullName = "Ayush Sharma",
+        email = "ayush@example.com",
+        dailyFocus = "Study 1 hr & save ₹500",
+        motivationStyle = "friendly",
+        onboardingCompleted = true
+    )
+
     private fun sampleState() = LifeMateUiState(
         isLoading = false,
-        profile = UserProfile(
-            id = "user1",
-            userId = "user1",
-            fullName = "Ayush Sharma",
-            email = "ayush@example.com",
-            dailyFocus = "Study 1 hr & save ₹500",
-            motivationStyle = "friendly",
-            onboardingCompleted = true
-        ),
+        profile = sampleProfile(),
         displayName = "Ayush Sharma",
         email = "ayush@example.com",
         todayTasks = listOf(
@@ -64,15 +67,19 @@ class PrimaryScreensComposeTest {
     )
 
     @Test
-    fun `startup configuration error screen renders cleanly`() {
+    fun `login screen renders saved local workspaces when available`() {
         composeRule.setContent {
             LifeMateTheme {
-                StartupConfigurationErrorScreen(onRetry = {})
+                LoginScreen(
+                    existingProfiles = listOf(sampleProfile()),
+                    onSelectWorkspace = {},
+                    onCreateWorkspace = { _, _ -> }
+                )
             }
         }
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("LifeMate Setup Incomplete").assertIsDisplayed()
-        composeRule.onNodeWithText("Retry").assertIsDisplayed()
+        composeRule.onNodeWithText("Ayush Sharma").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("create_workspace_button").performScrollTo().assertIsDisplayed()
     }
 
     @Test

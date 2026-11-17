@@ -197,7 +197,7 @@ fun ProfileScreen(
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = "Signed in with Google",
+                                text = "Private On-Device Workspace",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
@@ -234,8 +234,8 @@ fun ProfileScreen(
                     Column(modifier = Modifier.padding(16.dp)) {
                         ProfileInfoRow(
                             icon = Icons.Rounded.Email,
-                            label = "Google Account",
-                            value = uiState.email.ifBlank { "Connected" }
+                            label = "Workspace Profile",
+                            value = uiState.email.ifBlank { "On-device local profile" }
                         )
                         HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
                         ProfileInfoRow(
@@ -505,7 +505,7 @@ fun ProfileScreen(
             onDismissRequest = { showResetConfirm = false },
             title = { Text("Reset Local Data?") },
             text = {
-                Text("This clears your locally cached preferences and custom photo on this device. Your synced cloud tasks, expenses, and goals remain safe.")
+                Text("This clears your cached theme preference and custom profile photo for this workspace. Your tasks, expenses, and goals remain saved on this device.")
             },
             confirmButton = {
                 Button(
@@ -527,8 +527,8 @@ fun ProfileScreen(
     if (showLogoutConfirm) {
         AlertDialog(
             onDismissRequest = { showLogoutConfirm = false },
-            title = { Text("Logout from LifeMate?") },
-            text = { Text("You can sign back in anytime with your Google account.") },
+            title = { Text("Leave Current Workspace?") },
+            text = { Text("You can reopen this workspace anytime from the welcome screen.") },
             confirmButton = {
                 Button(
                     onClick = {

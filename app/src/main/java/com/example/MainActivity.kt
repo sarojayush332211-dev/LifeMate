@@ -1,26 +1,18 @@
 package com.example
 
-import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -33,8 +25,6 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.TrackChanges
-import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -46,13 +36,11 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,10 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.credentials.CredentialManager
-import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -75,7 +60,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.auth.FirebaseAuthManager
+import com.example.auth.LocalAccountManager
+import com.example.auth.LocalSessionState
 import com.example.data.local.LocalPreferencesStore
 import com.example.data.repository.LifeMateRepository
 import com.example.ui.components.QuickAddModalSheet
@@ -90,15 +76,7 @@ import com.example.ui.screens.ProfileSetupScreen
 import com.example.ui.theme.LifeMateTheme
 import com.example.ui.viewmodel.LifeMateUiState
 import com.example.ui.viewmodel.LifeMateViewModel
-import com.google.firebase.Firebase
-import com.google.firebase.FirebaseApp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.auth.auth
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 object NavRoutes {
@@ -124,14 +102,6 @@ private val Destinations = listOf(
     BottomNavDestination(NavRoutes.PROFILE, "Profile", Icons.Rounded.Person, Icons.Outlined.Person)
 )
 
-internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
-    val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-        trySend(firebaseAuth.currentUser)
-    }
-    addAuthStateListener(listener)
-    awaitClose { removeAuthStateListener(listener) }
-}
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -143,111 +113,69 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun LifeMateAppRoot(auth: FirebaseAuth? = null) {
+fun LifeMateAppRoot() {
     val context = LocalContext.current
     val appContext = context.applicationContext
+    val coroutineScope = rememberCoroutineScope()
+
     val prefsStore = remember(appContext) { LocalPreferencesStore(appContext) }
+    val repository = remember(appContext) { LifeMateRepository(appContext) }
+    val accountManager = remember(repository, prefsStore) {
+        LocalAccountManager(repository = repository, prefsStore = prefsStore)
+    }
+
     val lastDarkMode by prefsStore.lastDarkModeFlow.collectAsStateWithLifecycle(initialValue = false)
-
-    var initRetryTick by remember { mutableIntStateOf(0) }
-    val resolvedAuth = remember(appContext, auth, initRetryTick) {
-        auth ?: runCatching {
-            if (FirebaseApp.getApps(appContext).isEmpty()) {
-                FirebaseApp.initializeApp(appContext)
-            }
-            if (FirebaseApp.getApps(appContext).isNotEmpty()) Firebase.auth else null
-        }.getOrNull()
-    }
-
-    if (resolvedAuth == null) {
-        LifeMateTheme(darkTheme = lastDarkMode) {
-            StartupConfigurationErrorScreen(
-                onRetry = { initRetryTick++ }
-            )
+    val sessionState by remember(accountManager) {
+        accountManager.activeUserIdFlow.map { uid ->
+            if (uid.isNullOrBlank()) LocalSessionState.SignedOut
+            else LocalSessionState.Authenticated(uid)
         }
-        return
-    }
+    }.collectAsStateWithLifecycle(initialValue = LocalSessionState.Loading)
 
-    val credentialManager = remember(appContext) { CredentialManager.create(appContext) }
-    val authManager = remember(appContext, resolvedAuth, credentialManager) {
-        FirebaseAuthManager(
-            context = appContext,
-            auth = resolvedAuth,
-            credentialManager = credentialManager
-        )
-    }
-    val currentUser by authManager.observeAuthUser()
-        .collectAsStateWithLifecycle(initialValue = resolvedAuth.currentUser)
+    val existingProfiles by accountManager.existingProfilesFlow
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
-    val activity = context as? Activity
-    LaunchedEffect(authManager, activity) {
-        if (resolvedAuth.currentUser == null) {
-            authManager.attemptSilentSignIn(activity)
-        }
-    }
-
-    val user = currentUser
-    if (user == null) {
-        LifeMateTheme(darkTheme = lastDarkMode) {
-            LoginScreen(
-                authManager = authManager,
-                onAuthSuccess = {}
-            )
-        }
-    } else {
-        key(user.uid) {
-            AuthenticatedLifeMateSession(
-                user = user,
-                authManager = authManager,
-                fallbackDarkMode = lastDarkMode
-            )
-        }
-    }
-}
-
-@Composable
-internal fun StartupConfigurationErrorScreen(onRetry: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .safeDrawingPadding(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 420.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.WarningAmber,
-                    contentDescription = "Configuration required",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(48.dp)
-                )
-                Text(
-                    text = "LifeMate Setup Incomplete",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    text = "Firebase configuration could not be loaded in this build. Please verify google-services.json is included and try again.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(onClick = onRetry) {
-                    Text("Retry")
+    when (val session = sessionState) {
+        LocalSessionState.Loading -> {
+            LifeMateTheme(darkTheme = lastDarkMode) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .safeDrawingPadding(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
+            }
+        }
+
+        LocalSessionState.SignedOut -> {
+            LifeMateTheme(darkTheme = lastDarkMode) {
+                LoginScreen(
+                    existingProfiles = existingProfiles,
+                    onSelectWorkspace = { uid ->
+                        coroutineScope.launch {
+                            accountManager.selectWorkspace(uid)
+                        }
+                    },
+                    onCreateWorkspace = { name, email ->
+                        coroutineScope.launch {
+                            accountManager.createNewWorkspace(initialName = name, email = email)
+                        }
+                    }
+                )
+            }
+        }
+
+        is LocalSessionState.Authenticated -> {
+            key(session.userId) {
+                AuthenticatedLifeMateSession(
+                    userId = session.userId,
+                    repository = repository,
+                    prefsStore = prefsStore,
+                    accountManager = accountManager,
+                    fallbackDarkMode = lastDarkMode
+                )
             }
         }
     }
@@ -255,28 +183,22 @@ internal fun StartupConfigurationErrorScreen(onRetry: () -> Unit) {
 
 @Composable
 private fun AuthenticatedLifeMateSession(
-    user: FirebaseUser,
-    authManager: FirebaseAuthManager,
+    userId: String,
+    repository: LifeMateRepository,
+    prefsStore: LocalPreferencesStore,
+    accountManager: LocalAccountManager,
     fallbackDarkMode: Boolean
 ) {
     val coroutineScope = rememberCoroutineScope()
 
     val viewModel: LifeMateViewModel = viewModel(
-        key = user.uid,
+        key = userId,
         factory = viewModelFactory {
             initializer {
-                val app = checkNotNull(this[APPLICATION_KEY]) {
-                    "APPLICATION_KEY missing from CreationExtras"
-                }
-                val databaseId = app.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(databaseId)
                 LifeMateViewModel(
-                    repository = LifeMateRepository(db),
-                    prefsStore = LocalPreferencesStore(app),
-                    currentUserId = user.uid,
-                    googleDisplayName = user.displayName ?: "",
-                    googleEmail = user.email ?: "",
-                    googlePhotoUrl = user.photoUrl?.toString() ?: ""
+                    repository = repository,
+                    prefsStore = prefsStore,
+                    currentUserId = userId
                 )
             }
         }
@@ -301,7 +223,7 @@ private fun AuthenticatedLifeMateSession(
 
             uiState.needsOnboarding -> {
                 ProfileSetupScreen(
-                    initialName = user.displayName ?: "",
+                    initialName = uiState.profile?.fullName ?: "",
                     initialAvatarModel = uiState.avatarModel,
                     isSaving = isSaving,
                     onPickPhoto = viewModel::savePickedPhoto,
@@ -317,7 +239,7 @@ private fun AuthenticatedLifeMateSession(
                     viewModel = viewModel,
                     onLogout = {
                         coroutineScope.launch {
-                            authManager.signOut()
+                            accountManager.signOut()
                         }
                     }
                 )

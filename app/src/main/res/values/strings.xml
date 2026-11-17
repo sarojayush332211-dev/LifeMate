@@ -2,7 +2,7 @@
     <string name="app_name">LifeMate</string>
     <string name="tagline">Your personal life companion</string>
     <string name="login_subtitle">Plan your day. Track your progress. Stay consistent.</string>
-    <string name="continue_with_google">Continue with Google</string>
+    <string name="get_started">Get Started</string>
     <string name="setup_title">Let\'s personalize your LifeMate</string>
     <string name="setup_subtitle">Tailor your daily focus and motivation style. You can update this anytime from Profile.</string>
     <string name="nav_home">Home</string>

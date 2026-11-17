@@ -1,10 +1,5 @@
 package com.example.data.model
 
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.DocumentId
-import com.google.firebase.firestore.IgnoreExtraProperties
-import com.google.firebase.firestore.ServerTimestamp
-
 enum class MotivationStyle(val id: String, val label: String, val subtitle: String) {
     FRIENDLY(
         id = "friendly",
@@ -47,9 +42,8 @@ enum class SubscriptionTier {
     PRO_PREVIEW
 }
 
-@IgnoreExtraProperties
 data class UserProfile(
-    @DocumentId val id: String = "",
+    val id: String = "",
     val userId: String = "",
     val fullName: String = "",
     val email: String = "",
@@ -60,46 +54,43 @@ data class UserProfile(
     val onboardingCompleted: Boolean = false,
     val darkModeEnabled: Boolean = false,
     val notificationsEnabled: Boolean = false,
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
 )
 
-@IgnoreExtraProperties
 data class DailyTask(
-    @DocumentId val id: String = "",
+    val id: String = "",
     val userId: String = "",
     val title: String = "",
     val notes: String = "",
     val completed: Boolean = false,
     val scheduledDate: String = "",
     val completedDate: String = "",
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
 )
 
-@IgnoreExtraProperties
 data class ExpenseEntry(
-    @DocumentId val id: String = "",
+    val id: String = "",
     val userId: String = "",
     val amount: Double = 0.0,
     val category: String = ExpenseCategory.FOOD.label,
     val description: String = "",
     val expenseDate: String = "",
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
 )
 
-@IgnoreExtraProperties
 data class PersonalGoal(
-    @DocumentId val id: String = "",
+    val id: String = "",
     val userId: String = "",
     val title: String = "",
     val targetAmount: Double = 0.0,
     val currentAmount: Double = 0.0,
     val unit: String = "₹",
     val targetDate: String = "",
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
 ) {
     val progressFraction: Float
         get() = if (targetAmount > 0.0) {
@@ -112,15 +103,14 @@ data class PersonalGoal(
         get() = (progressFraction * 100f).toInt()
 }
 
-@IgnoreExtraProperties
 data class ActivityDay(
-    @DocumentId val id: String = "",
+    val id: String = "",
     val userId: String = "",
     val dateKey: String = "",
     val completedTasksCount: Long = 0L,
     val engagementCount: Long = 0L,
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    val createdAtMillis: Long = 0L,
+    val updatedAtMillis: Long = 0L
 )
 
 data class StreakSummary(
